@@ -1,4 +1,5 @@
 ﻿#include <chrono>
+#include <cstring>
 #include <iostream>
 #include <fstream>
 #include <limits>
@@ -80,57 +81,19 @@ __host__ __device__ int escape_time(size_t x, size_t y, const size_t height, con
     return (int)t;
 }
 
-void histogram(int *grid, size_t width, size_t height)
+// device (kernel) function
+__global__ void newtonGPU(int *grid, const size_t width, const size_t height, const double dx, const double dy, const double tolerance, const size_t max_iter)
 {
-    std::cerr << "calculating histogram color scheme ..." << std::endl
-              << std::endl;
+    // get exact location in array
+    size_t x = blockDim.x * blockIdx.x + threadIdx.x;
 
-    // compute total counts
-    size_t total = width * height;
+    size_t y = blockDim.y * blockIdx.y + threadIdx.y;
 
-    int NumIterationsPerPixel[256];
+    int t = escape_time(x, y, height, dx, dy, tolerance, max_iter);
 
-    int *hue = (int *)malloc(total * sizeof(int));
+    grid[y * width + x] = t;
 
-    for (size_t i = 0; i < 256; i++)
-    {
-        NumIterationsPerPixel[i] = 0;
-    }
-
-    if (hue != NULL)
-    {
-        // pass 1: compute histogram
-        for (size_t i = 0; i < width * height; i++)
-        {
-            NumIterationsPerPixel[grid[i]]++;
-
-            hue[i] = 0;
-        }
-
-        auto color_scaler = 1.0 / double(total) * 255.0;
-
-        // pass 2: compute hue and map to color
-        for (size_t i = 0; i < width * height; i++)
-        {
-            for (size_t j = 0; j < 256; j++)
-            {
-                if ((int)j <= grid[i])
-                {
-                    hue[i] += NumIterationsPerPixel[j];
-                }
-            }
-
-            grid[i] = int(double(hue[i]) * color_scaler);
-        }
-
-        free(hue);
-    }
-    else
-    {
-        std::cerr << "Unable to allocate RAM on host!" << std::endl;
-
-        exit(1);
-    }
+    __syncthreads();
 }
 
 // host (kernel) function
@@ -147,28 +110,51 @@ void newtonCPU(int *grid, const size_t width, const size_t height, const double 
     }
 }
 
-// device (kernel) function
-__global__ void newtonGPU(int *grid, const size_t width, const size_t height, const double dx, const double dy, const double tolerance, const size_t max_iter)
+void histogram(int *grid, size_t width, size_t height)
 {
-    // get exact location in array
-    size_t x = blockDim.x * blockIdx.x + threadIdx.x;
+    std::cerr << "calculating histogram color scheme ..." << std::endl
+              << std::endl;
 
-    size_t y = blockDim.y * blockIdx.y + threadIdx.y;
+    // compute total counts
+    size_t total = width * height;
 
-    int t = escape_time(x, y, height, dx, dy, tolerance, max_iter);
+    int NumIterationsPerPixel[256];
 
-    grid[y * width + x] = t;
+    int *hue = (int *)malloc(total * sizeof(int));
 
-    __syncthreads();
-}
+    std::memset(NumIterationsPerPixel, 0, 256 * sizeof(int));
+    
+    if (hue != NULL)
+    {
+        // pass 1: compute histogram
+        for (size_t i = 0; i < width * height; i++)
+        {
+            NumIterationsPerPixel[grid[i]]++;
 
-bool check_argument(char **argv, int i, const char *param)
-{
-    std::string arg = std::string(argv[i]);
+            hue[i] = 0;
+        }
 
-    std::transform(arg.begin(), arg.end(), arg.begin(), ::toupper);
+        auto color_scaler = 1.0 / double(total) * 255.0;
 
-    return arg == param;
+        // pass 2: compute hue and map to color
+        for (size_t i = 0; i < width * height; i++)
+        {
+            for (size_t j = 0; j <= grid[i]; j++)
+            {
+                hue[i] += NumIterationsPerPixel[j];
+            }
+
+            grid[i] = int(double(hue[i]) * color_scaler);
+        }
+
+        free(hue);
+    }
+    else
+    {
+        std::cerr << "Unable to allocate RAM on host!" << std::endl;
+
+        exit(1);
+    }
 }
 
 void generate_image_gray(int *grid, size_t WIDTH, size_t HEIGHT, int brightness, const char *filename)
@@ -276,6 +262,15 @@ void generate_image_rgb(int *grid, size_t WIDTH, size_t HEIGHT, int brightness, 
     }
 
     ofs.close();
+}
+
+bool check_argument(char **argv, int i, const char *param)
+{
+    std::string arg = std::string(argv[i]);
+
+    std::transform(arg.begin(), arg.end(), arg.begin(), ::toupper);
+
+    return arg == param;
 }
 
 int main(int argc, char **argv)
@@ -400,12 +395,9 @@ int main(int argc, char **argv)
     }
 
     // initialize the input data
-    for (size_t i = 0; i < NUM; ++i)
-    {
-        cpugrid[i] = 0;
+    std::memset(cpugrid, 0, NUM * BYTES);
 
-        gpugrid[i] = 0;
-    }
+    std::memset(gpugrid, 0, NUM * BYTES);
 
     // newton paramemters
     double dx = 5.0 / (double)WIDTH;
