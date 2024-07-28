@@ -123,7 +123,7 @@ void histogram(int *grid, size_t width, size_t height)
     int *hue = (int *)malloc(total * sizeof(int));
 
     std::memset(NumIterationsPerPixel, 0, 256 * sizeof(int));
-    
+
     if (hue != NULL)
     {
         // pass 1: compute histogram
