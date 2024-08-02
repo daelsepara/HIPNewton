@@ -63,7 +63,7 @@ void histogramGPU(int *gputemp, int *gpugrid, dim3 dimGrid, dim3 dimBlock, size_
     // allocate required memory
     cpuhistogram = (int *)malloc(histogram_size);
 
-    if (cpuhistogram != NULL)
+    if (cpuhistogram != nullptr)
     {
         // initialize histogram on cpu
         std::memset(cpuhistogram, 0, histogram_size);
@@ -110,7 +110,7 @@ void histogram(int *grid, size_t width, size_t height)
 
     std::memset(NumIterationsPerPixel, 0, 256 * sizeof(int));
 
-    if (hue != NULL)
+    if (hue != nullptr)
     {
         // pass 1: compute histogram
         for (size_t i = 0; i < width * height; i++)
