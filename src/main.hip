@@ -7,16 +7,8 @@
 
 #include <hip/hip_runtime.h>
 
-#define HIP_CHECK(status)                                                                                                                 \
-    {                                                                                                                                     \
-        if (status != hipSuccess)                                                                                                         \
-        {                                                                                                                                 \
-            std::cerr << std::endl                                                                                                        \
-                      << "error: '" << hipGetErrorString(status) << "'(" << status << ") at " << __FILE__ << ":" << __LINE__ << std::endl \
-                      << std::endl;                                                                                                       \
-            exit(0);                                                                                                                      \
-        }                                                                                                                                 \
-    }
+#include "hipcheck.h"
+#include "histogram.h"
 
 __host__ __device__ double mag2(double zx, double zy)
 {
@@ -107,53 +99,6 @@ void newtonCPU(int *grid, const size_t width, const size_t height, const double 
 
             grid[y * width + x] = t;
         }
-    }
-}
-
-void histogram(int *grid, size_t width, size_t height)
-{
-    std::cerr << "calculating histogram color scheme ..." << std::endl
-              << std::endl;
-
-    // compute total counts
-    size_t total = width * height;
-
-    int NumIterationsPerPixel[256];
-
-    int *hue = (int *)malloc(total * sizeof(int));
-
-    std::memset(NumIterationsPerPixel, 0, 256 * sizeof(int));
-
-    if (hue != NULL)
-    {
-        // pass 1: compute histogram
-        for (size_t i = 0; i < width * height; i++)
-        {
-            NumIterationsPerPixel[grid[i]]++;
-
-            hue[i] = 0;
-        }
-
-        auto color_scaler = 1.0 / double(total) * 255.0;
-
-        // pass 2: compute hue and map to color
-        for (size_t i = 0; i < width * height; i++)
-        {
-            for (size_t j = 0; j <= grid[i]; j++)
-            {
-                hue[i] += NumIterationsPerPixel[j];
-            }
-
-            grid[i] = int(double(hue[i]) * color_scaler);
-        }
-
-        free(hue);
-    }
-    else
-    {
-        std::cerr << "Unable to allocate RAM on host!" << std::endl;
-
-        exit(1);
     }
 }
 
@@ -283,6 +228,8 @@ int main(int argc, char **argv)
 
     bool gray = false;
 
+    bool cpuhist = false;
+
     if (argc < 2)
     {
         std::cerr << "To use:" << std::endl
@@ -303,6 +250,16 @@ int main(int argc, char **argv)
 
         HEIGHT = std::atoi(argv[2]);
     }
+    else if (argc < 5)
+    {
+        WIDTH = std::atoi(argv[1]);
+
+        HEIGHT = std::atoi(argv[2]);
+
+        gray = check_argument(argv, 3, "/GRAY");
+
+        cpuhist = check_argument(argv, 3, "/HISTCPU");
+    }
     else
     {
         WIDTH = std::atoi(argv[1]);
@@ -310,6 +267,8 @@ int main(int argc, char **argv)
         HEIGHT = std::atoi(argv[2]);
 
         gray = check_argument(argv, 3, "/GRAY");
+
+        cpuhist = check_argument(argv, 4, "/HISTCPU");
     }
 
     // get device properties
@@ -504,7 +463,14 @@ int main(int argc, char **argv)
 
     if (WIDTH * HEIGHT <= 16384 * 16384)
     {
-        histogram(gpugrid, WIDTH, HEIGHT);
+        if (cpuhist)
+        {
+            histogram(gpugrid, WIDTH, HEIGHT);
+        }
+        else
+        {
+            histogramGPU(gputemp, gpugrid, dimGrid, dimBlock, WIDTH, HEIGHT);
+        }
 
         if (gray)
         {
