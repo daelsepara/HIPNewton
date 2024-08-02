@@ -14,8 +14,6 @@ __global__ void histogram_gpu_counts(int *grid, int *gpuhistogram, size_t width)
 
     // uses atomic addition to ensure that counts are correct
     atomicAdd(&gpuhistogram[grid[y * width + x]], 1);
-
-    __syncthreads();
 }
 
 // finalize colors
