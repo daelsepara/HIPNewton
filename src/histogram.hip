@@ -1,46 +1,53 @@
-﻿#include <iostream>
+﻿#include <cmath>
+#include <iostream>
 
 #include <hip/hip_runtime.h>
 
 #include "hipcheck.h"
 
 // generate histogram counts
-__global__ void histogram_gpu_counts(int *grid, int *gpuhistogram, size_t width)
+__global__ void histogram_gpu_counts(int *grid, int *gpuhistogram, size_t width, size_t height)
 {
     // get exact location in array
     size_t x = blockDim.x * blockIdx.x + threadIdx.x;
 
     size_t y = blockDim.y * blockIdx.y + threadIdx.y;
 
-    // uses atomic addition to ensure that counts are correct
-    atomicAdd(&gpuhistogram[grid[y * width + x]], 1);
+    if (x < width && y < height)
+    {
+        // uses atomic addition to ensure that counts are correct
+        atomicAdd(&gpuhistogram[grid[y * width + x]], 1);
+    }
 }
 
 // finalize colors
-__global__ void histogram_gpu_finalize(int *grid, int *gpuhistogram, size_t width, size_t total, double color_scaler)
+__global__ void histogram_gpu_finalize(int *grid, int *gpuhistogram, size_t width, size_t height, size_t total, double color_scaler)
 {
     // get exact location in array
     size_t x = blockDim.x * blockIdx.x + threadIdx.x;
 
     size_t y = blockDim.y * blockIdx.y + threadIdx.y;
 
-    // index to array
-    size_t index = y * width + x;
-
-    // color value
-    int color = grid[index];
-
-    // initialize hue
-    int hue = 0;
-
-    // compute hue based on cumulative histogram counts
-    for (size_t i = 0; i <= color; i++)
+    if (x < width && y < height)
     {
-        hue += gpuhistogram[i];
-    }
+        // index to array
+        size_t index = y * width + x;
 
-    // set final color
-    grid[index] = int(double(hue) * color_scaler);
+        // color value
+        int color = grid[index];
+
+        // initialize hue
+        int hue = 0;
+
+        // compute hue based on cumulative histogram counts
+        for (size_t i = 0; i <= color; i++)
+        {
+            hue += gpuhistogram[i];
+        }
+
+        // set final color
+        grid[index] = int(double(hue) * color_scaler);
+    }
 }
 
 void histogramGPU(int *gputemp, int *gpugrid, dim3 dimGrid, dim3 dimBlock, size_t width, size_t height)
@@ -75,10 +82,10 @@ void histogramGPU(int *gputemp, int *gpugrid, dim3 dimGrid, dim3 dimBlock, size_
         HIP_CHECK(hipMemcpy(gpuhistogram, cpuhistogram, histogram_size, hipMemcpyHostToDevice));
 
         // compute histogram
-        hipLaunchKernelGGL(histogram_gpu_counts, dimGrid, dimBlock, 0, 0, gputemp, gpuhistogram, width);
+        hipLaunchKernelGGL(histogram_gpu_counts, dimGrid, dimBlock, 0, 0, gputemp, gpuhistogram, width, height);
 
         // finalize colors
-        hipLaunchKernelGGL(histogram_gpu_finalize, dimGrid, dimBlock, 0, 0, gputemp, gpuhistogram, width, total, color_scaler);
+        hipLaunchKernelGGL(histogram_gpu_finalize, dimGrid, dimBlock, 0, 0, gputemp, gpuhistogram, width, height, total, color_scaler);
 
         // copy color-mapped image from gpu
         HIP_CHECK(hipMemcpy(gpugrid, gputemp, image_size, hipMemcpyDeviceToHost));

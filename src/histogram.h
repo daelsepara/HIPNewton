@@ -5,9 +5,9 @@
 
 #include "hipcheck.h"
 
-__global__ void histogram_gpu_finalize(int *grid, int *gpuhistogram, size_t width, size_t total, double color_scaler);
+__global__ void histogram_gpu_finalize(int *grid, int *gpuhistogram, size_t width, size_t height, size_t total, double color_scaler);
 
-__global__ void histogram_gpu_counts(int *grid, int *gpuhistogram, size_t width);
+__global__ void histogram_gpu_counts(int* grid, int* gpuhistogram, size_t width, size_t height);
 
 void histogramGPU(int* gputemp, int* gpugrid, dim3 dimGrid, dim3 dimBlock, size_t width, size_t height);
 
